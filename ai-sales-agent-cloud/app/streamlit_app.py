@@ -1,6 +1,12 @@
-import streamlit as st, pandas as pd
+import sys, os
+# ensure correct import path on Streamlit Cloud
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import streamlit as st
+import pandas as pd
 from app.agent_orchestrator import run_pipeline
 from app.utils.sales_navigator_csv import accounts_csv
+
 st.set_page_config(page_title='AI Sales Agent (Cloud)', layout='wide')
 st.title('🧠 AI Sales Agent – Streamlit Cloud')
 st.caption('Similarweb → ZoomInfo → Salesforce → Sales Navigator (Mocks)')
