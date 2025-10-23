@@ -37,9 +37,9 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         params["min_monthly_visits"],
     )
 
-    # 2) Normalize & Dedupe
+    # 2) Normalize & Dedupe (uses stdlib difflib inside fuzzy_dedupe)
     norm = normalize(raw)
-    deduped = fuzzy_dedupe(norm, threshold=0.92)  # uses stdlib difflib under the hood
+    deduped = fuzzy_dedupe(norm, threshold=0.92)
 
     # Cap to 5 companies in Mini Mode
     if params.get("mini_mode"):
@@ -118,10 +118,11 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     # 5) Sales Navigator CSV
     accounts_csv(companies_no_personas, "data/outputs/sn_accounts_upload.csv")
 
-    # 6) Final Excel with three sheets
-    with pd.ExcelWriter("data/outputs/final.xlsx") as xl:
+    # 6) Final Excel with three sheets (use XlsxWriter to avoid openpyxl)
+    with pd.ExcelWriter("data/outputs/final.xlsx", engine="xlsxwriter") as xl:
         companies.to_excel(xl, sheet_name="Companies", index=False)
         leads_df.to_excel(xl, sheet_name="Leads", index=False)
         companies_no_personas.to_excel(xl, sheet_name="Needs_SalesNav", index=False)
 
     return companies, leads_df, companies_no_personas
+
