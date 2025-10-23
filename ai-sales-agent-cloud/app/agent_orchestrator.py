@@ -14,7 +14,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     """
     Orchestrates the mock end-to-end pipeline:
       Similarweb (mock) → Normalize & Dedupe → Salesforce check (mock)
-      → ZoomInfo personas (mock) → Sales Navigator CSV + final Excel.
+      → ZoomInfo personas (mock) → Sales Navigator CSV + final Excel (with CSV fallback).
 
     Returns:
       companies (DataFrame), leads_df (DataFrame), companies_no_personas (DataFrame)
@@ -37,7 +37,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         params["min_monthly_visits"],
     )
 
-    # 2) Normalize & Dedupe (uses stdlib difflib inside fuzzy_dedupe)
+    # 2) Normalize & Dedupe (using stdlib difflib inside fuzzy_dedupe)
     norm = normalize(raw)
     deduped = fuzzy_dedupe(norm, threshold=0.92)
 
@@ -118,11 +118,18 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     # 5) Sales Navigator CSV
     accounts_csv(companies_no_personas, "data/outputs/sn_accounts_upload.csv")
 
-    # 6) Final Excel with three sheets (use XlsxWriter to avoid openpyxl)
-    with pd.ExcelWriter("data/outputs/final.xlsx", engine="xlsxwriter") as xl:
-        companies.to_excel(xl, sheet_name="Companies", index=False)
-        leads_df.to_excel(xl, sheet_name="Leads", index=False)
-        companies_no_personas.to_excel(xl, sheet_name="Needs_SalesNav", index=False)
+    # 6) Final Excel with three sheets (prefer XlsxWriter; fallback to CSVs)
+    try:
+        with pd.ExcelWriter("data/outputs/final.xlsx", engine="xlsxwriter") as xl:
+            companies.to_excel(xl, sheet_name="Companies", index=False)
+            leads_df.to_excel(xl, sheet_name="Leads", index=False)
+            companies_no_personas.to_excel(xl, sheet_name="Needs_SalesNav", index=False)
+    except Exception as e:
+        # Fallback: write separate CSVs so the app still provides downloads
+        companies.to_csv("data/outputs/final_companies.csv", index=False)
+        leads_df.to_csv("data/outputs/final_leads.csv", index=False)
+        companies_no_personas.to_csv("data/outputs/final_needs_salesnav.csv", index=False)
+        # Optional: log the error for visibility in Streamlit logs
+        print(f"[WARN] Failed to write XLSX with XlsxWriter: {e}. Wrote CSV fallbacks instead.")
 
     return companies, leads_df, companies_no_personas
-
