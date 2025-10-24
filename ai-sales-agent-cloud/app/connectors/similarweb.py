@@ -1,17 +1,51 @@
-import random, pandas as pd
-VERT={'SaaS':['acmeapp','cloudify','datapulse','flowhq','marketoid'],'Ecommerce':['shophero','trendify','buybuddy','cartly','dealorama'],'Fintech':['payflux','finastro','bankly','ledgr','coinverse']}
-TLD={'DE':'.de','AT':'.at','CH':'.ch','FR':'.fr','US':'.com'}
+# app/connectors/similarweb.py
+import random
+import pandas as pd
+from typing import List, Dict
 
-def search_companies(verticals, countries, min_visits):
-    rows=[]
+VERTICAL_SAMPLES = {
+    'SaaS': ['acmeapp','cloudify','datapulse','flowhq','marketoid'],
+    'Ecommerce': ['shophero','trendify','buybuddy','cartly','dealorama'],
+    'Fintech': ['payflux','finastro','bankly','ledgr','coinverse']
+}
+
+COUNTRY_DOMAINS = {'DE':'.de','AT':'.at','CH':'.ch','FR':'.fr','US':'.com'}
+
+def search_companies(verticals: List[str], countries: List[str], min_visits: int) -> pd.DataFrame:
+    rows: List[Dict] = []
     for v in verticals:
-        names=VERT.get(v, VERT['SaaS'])
-        for n in names:
+        names = VERTICAL_SAMPLES.get(v, VERTICAL_SAMPLES['SaaS'])
+        for name in names:
             for c in countries:
-                t=TLD.get(c,'.com'); visits=random.randint(min_visits, max(min_visits+50000, min_visits*3))
-                rows.append({'domain':f"{n}{t}",'company_name':n.capitalize(),'country':c,'vertical':v,'sw_visits':visits})
-    df=pd.DataFrame(rows)
+                tld = COUNTRY_DOMAINS.get(c, '.com')
+                visits = random.randint(min_visits, max(min_visits + 50_000, min_visits * 3))
+
+                # Mock HQ logic:
+                # - 70%: HQ in the same country as the result row
+                # - 30%: HQ in a random of the selected countries (or fallback to the same)
+                if countries:
+                    hq = c if random.random() < 0.7 else random.choice(countries)
+                else:
+                    hq = c
+
+                domain = f"{name}{tld}"
+                rows.append({
+                    'domain': domain,
+                    'company_name': name.capitalize(),
+                    'country': c,           # result row country / market
+                    'hq_country': hq,       # NEW: headquarters country
+                    'vertical': v,
+                    'sw_visits': visits,
+                    'company_url': f"https://{domain}"  # NEW: canonical company URL
+                })
+
+    df = pd.DataFrame(rows)
+
+    # Add a few domain variants (for dedupe demo)
     if not df.empty:
-        extra=df.sample(min(3,len(df))).copy(); extra['domain']=extra['domain'].str.replace('.com','.io')
-        df=pd.concat([df,extra],ignore_index=True)
+        extra = df.sample(min(3, len(df))).copy()
+        extra['domain'] = extra['domain'].str.replace('.com', '.io', regex=False)
+        # keep same metadata for the variant rows
+        df = pd.concat([df, extra], ignore_index=True)
+
     return df
