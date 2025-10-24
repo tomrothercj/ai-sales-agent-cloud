@@ -10,10 +10,9 @@ from app.utils.sales_navigator_csv import accounts_csv
 
 
 def make_excel_bytes(companies: pd.DataFrame, leads: pd.DataFrame, needs_sn: pd.DataFrame):
-    """
-    Try to generate an XLSX in memory. Return bytes or None on failure.
-    """
+    """Try to generate an XLSX in memory. Return bytes or None on failure."""
     try:
+        import io
         bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="xlsxwriter") as xl:
             companies.to_excel(xl, sheet_name="Companies", index=False)
@@ -22,7 +21,6 @@ def make_excel_bytes(companies: pd.DataFrame, leads: pd.DataFrame, needs_sn: pd.
         bio.seek(0)
         return bio.getvalue()
     except Exception as e:
-        # Log to Streamlit console for debugging and return None to trigger CSV fallback
         print(f"[WARN] Could not build in-memory XLSX: {e}")
         return None
 
@@ -39,6 +37,13 @@ with st.sidebar:
     min_visits = st.number_input('Min monthly visits', min_value=1000, value=50000, step=5000)
     titles_regex = st.text_input('Persona/Title Regex', '(Head|VP|Director) (Marketing|Sales|Growth|Demand Gen)')
     mini_mode = st.checkbox('Mini mode (≤5 companies, fixed seed)', value=True)
+
+    st.markdown('---')
+    st.subheader('Lead Enrichment Options')
+    enrich_emails_zoominfo = st.checkbox('Enrich emails from ZoomInfo', value=True)
+    include_sn_leads = st.checkbox('Include Sales Navigator mock leads', value=False)
+
+    st.markdown('---')
     run = st.button('Run pipeline')
 
 st.markdown('---')
@@ -68,6 +73,10 @@ if run:
         'min_monthly_visits': int(min_visits),
         'titles_regex': titles_regex,
         'mini_mode': bool(mini_mode),
+
+        # NEW toggles:
+        'enable_zoominfo_email_enrichment': bool(enrich_emails_zoominfo),
+        'use_sales_navigator_mock': bool(include_sn_leads),
     }
     with st.spinner('Running pipeline...'):
         companies, leads, needs = run_pipeline(params, ui)
@@ -95,7 +104,7 @@ if not st.session_state.companies.empty:
     if xlsx_bytes:
         st.download_button('📥 Download final.xlsx', data=xlsx_bytes, file_name='final.xlsx')
     else:
-        # If we cannot build XLSX, offer CSV fallbacks directly from DataFrames
+        # CSV fallbacks
         st.info("Could not build Excel workbook in this environment. Offering CSV downloads instead.")
         st.download_button(
             '📥 final_companies.csv',
@@ -124,8 +133,6 @@ if not st.session_state.companies.empty:
     else:
         # Build from in-memory DataFrame
         sn_csv = st.session_state.needs_sn.copy()
-        # Keep only the required columns and rename for SN import
-        # (Company Name, Company Website, Company LinkedIn URL, Country)
         out = pd.DataFrame({
             'Company Name': sn_csv.get('company_name', sn_csv.get('domain', pd.Series([], dtype=str))).fillna(sn_csv.get('domain')),
             'Company Website': 'https://' + sn_csv['domain'],
