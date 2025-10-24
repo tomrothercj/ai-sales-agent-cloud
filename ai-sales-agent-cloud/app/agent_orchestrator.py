@@ -65,7 +65,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
                 deduped.loc[idx[0], "company_name"], d
             )
 
-    # 4) ZoomInfo enrichment + personas (mock)
+       # 4) ZoomInfo enrichment + personas (mock)
     enriched_rows = []
     leads_frames = []
     for _, row in deduped.iterrows():
@@ -74,12 +74,17 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         zi_id = z.get("id") if z else None
 
         ppl = (
-            zi.find_personas(zi_id, params["titles_regex"], row.get("country"))
+            zi.find_personas(
+                zi_id,
+                params["titles_regex"],
+                row.get("country"),
+                row["domain"],
+                enable_email_enrichment=params.get("enable_zoominfo_email_enrichment", True),
+            )
             if zi_id
             else pd.DataFrame()
         )
         if not ppl.empty:
-            ppl["company_domain"] = row["domain"]
             leads_frames.append(ppl)
 
         enriched_rows.append(
@@ -95,24 +100,21 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         pd.concat(leads_frames)
         if leads_frames
         else pd.DataFrame(
-            columns=[
-                "company_domain",
-                "full_name",
-                "title",
-                "email",
-                "li_profile",
-                "source",
-                "confidence",
-            ]
+            columns=["company_domain","full_name","title","email","li_profile","source","confidence"]
         )
     )
 
-    # Companies that still need Sales Navigator (no personas found)
-    companies_no_personas = companies[
-        ~companies["domain"].isin(leads_df["company_domain"])
-    ]
+    # Companies still needing Sales Navigator (no personas from ZoomInfo)
+    companies_no_personas = companies[~companies["domain"].isin(leads_df["company_domain"])]
 
-    # --- Ensure output directory exists (Streamlit Cloud safe) ---
+    # 4b) OPTIONAL: Sales Navigator personas (emails must remain blank)
+    if params.get("use_sales_navigator_mock"):
+        from app.connectors.sales_navigator import find_personas_from_account_list
+        sn_domains = companies_no_personas["domain"].tolist()
+        sn_leads = find_personas_from_account_list(sn_domains)  # email intentionally blank
+        if not sn_leads.empty:
+            leads_df = pd.concat([leads_df, sn_leads], ignore_index=True)
+
     os.makedirs("data/outputs", exist_ok=True)
 
     # 5) Sales Navigator CSV
