@@ -114,19 +114,19 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     # Companies still needing Sales Navigator (no personas from ZoomInfo)
     companies_no_personas = companies[~companies["domain"].isin(leads_df["company_domain"])]
 
-    # 4b) OPTIONAL: Sales Navigator personas (emails must remain blank)
+       # 4b) OPTIONAL: Sales Navigator personas (emails must remain blank)
     if params.get("use_sales_navigator_mock"):
         try:
             from app.connectors.sales_navigator import find_personas_from_account_list
+            # Include SN leads for ALL companies, filtered by the same titles regex
             sn_domains = companies_no_personas["domain"].tolist()
-            sn_leads = find_personas_from_account_list(sn_domains)  # email intentionally blank
+            sn_leads = find_personas_from_account_list(sn_domains, params.get("titles_regex", ""))
             if not sn_leads.empty:
                 leads_df = pd.concat([leads_df, sn_leads], ignore_index=True)
         except Exception as e:
-            # Non-fatal: just log; the rest of the pipeline continues
+            # Non-fatal: just log; pipeline continues
             print(f"[WARN] Sales Navigator mock unavailable: {e}")
 
-    # --- Ensure output directory exists (Streamlit Cloud safe) ---
     os.makedirs("data/outputs", exist_ok=True)
 
     # 5) Sales Navigator CSV
