@@ -71,7 +71,8 @@ def find_personas(
             'full_name': f'{fn} {ln}',
             'title': title,
             'email': email,  # filled or blank based on toggle
-            'li_profile': f'https://www.linkedin.com/in/{fn.lower()}{ln.lower()}',
+         slug = f"{fn.lower()}-{ln.lower()}-{abs(hash(company_domain + fn + ln)) % 100000}"
+'li_profile': f'https://www.linkedin.com/in/{slug}/',
             'source': 'zoominfo',
             'confidence': round(random.uniform(0.6, 0.95), 2)
         })
