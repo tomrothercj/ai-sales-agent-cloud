@@ -6,7 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import streamlit as st
 import pandas as pd
 
-from app.agent_orchestrator import run_pipeline
+# 👉 Use the clean orchestrator module
+from app.agent_orchestrator_clean import run_pipeline
 from app.utils.sales_navigator_csv import accounts_csv
 
 
