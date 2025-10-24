@@ -14,8 +14,8 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     """
     Orchestrates the mock end-to-end pipeline:
       Similarweb (mock) → Normalize & Dedupe → Salesforce check (mock)
-      → ZoomInfo personas (mock) → Sales Navigator CSV + final Excel (with CSV fallback).
-
+      → ZoomInfo personas (mock) → optional Sales Navigator personas (mock)
+      → Sales Navigator CSV + final Excel (with CSV fallback).
     Returns:
       companies (DataFrame), leads_df (DataFrame), companies_no_personas (DataFrame)
     """
@@ -37,7 +37,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         params["min_monthly_visits"],
     )
 
-    # 2) Normalize & Dedupe (using stdlib difflib inside fuzzy_dedupe)
+    # 2) Normalize & Dedupe (stdlib difflib inside fuzzy_dedupe)
     norm = normalize(raw)
     deduped = fuzzy_dedupe(norm, threshold=0.92)
 
@@ -45,7 +45,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
     if params.get("mini_mode"):
         deduped = deduped.head(5).reset_index(drop=True)
 
-    # Optional UI overrides: keep specific domains even if fuzzy deduped
+    # Optional UI overrides: keep specific domains
     if ui_decisions.get("keep_domains"):
         extra = norm[norm["domain"].isin(ui_decisions["keep_domains"])]
         deduped = (
@@ -54,18 +54,25 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
             .reset_index(drop=True)
         )
 
-    # 3) Salesforce check (mock)
-    deduped["sf_account_id"] = deduped["domain"].apply(sf.find_account_by_domain)
+    # 3) Salesforce check (mock) — SAFE FALLBACKS
+    lookup_fn = getattr(sf, "find_account_by_domain", None)
+    if callable(lookup_fn):
+        deduped["sf_account_id"] = deduped["domain"].apply(lookup_fn)
+    else:
+        # if connector missing, default to None
+        deduped["sf_account_id"] = None
 
-    # Optional: create new SF accounts (mock) for selected domains
-    for d in ui_decisions.get("create_sf_accounts", []):
-        idx = deduped.index[deduped["domain"] == d]
-        if len(idx):
-            deduped.loc[idx, "sf_account_id"] = sf.create_account(
-                deduped.loc[idx[0], "company_name"], d
-            )
+    # Optional: create new SF accounts (mock) for selected domains — SAFE FALLBACK
+    create_fn = getattr(sf, "create_account", None)
+    if callable(create_fn):
+        for d in ui_decisions.get("create_sf_accounts", []):
+            idx = deduped.index[deduped["domain"] == d]
+            if len(idx):
+                deduped.loc[idx, "sf_account_id"] = create_fn(
+                    deduped.loc[idx[0], "company_name"], d
+                )
 
-       # 4) ZoomInfo enrichment + personas (mock)
+    # 4) ZoomInfo enrichment + personas (mock)
     enriched_rows = []
     leads_frames = []
     for _, row in deduped.iterrows():
@@ -97,7 +104,7 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
 
     companies = pd.DataFrame(enriched_rows)
     leads_df = (
-        pd.concat(leads_frames)
+        pd.concat(leads_frames, ignore_index=True)
         if leads_frames
         else pd.DataFrame(
             columns=["company_domain","full_name","title","email","li_profile","source","confidence"]
@@ -109,12 +116,17 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
 
     # 4b) OPTIONAL: Sales Navigator personas (emails must remain blank)
     if params.get("use_sales_navigator_mock"):
-        from app.connectors.sales_navigator import find_personas_from_account_list
-        sn_domains = companies_no_personas["domain"].tolist()
-        sn_leads = find_personas_from_account_list(sn_domains)  # email intentionally blank
-        if not sn_leads.empty:
-            leads_df = pd.concat([leads_df, sn_leads], ignore_index=True)
+        try:
+            from app.connectors.sales_navigator import find_personas_from_account_list
+            sn_domains = companies_no_personas["domain"].tolist()
+            sn_leads = find_personas_from_account_list(sn_domains)  # email intentionally blank
+            if not sn_leads.empty:
+                leads_df = pd.concat([leads_df, sn_leads], ignore_index=True)
+        except Exception as e:
+            # Non-fatal: just log; the rest of the pipeline continues
+            print(f"[WARN] Sales Navigator mock unavailable: {e}")
 
+    # --- Ensure output directory exists (Streamlit Cloud safe) ---
     os.makedirs("data/outputs", exist_ok=True)
 
     # 5) Sales Navigator CSV
@@ -131,7 +143,6 @@ def run_pipeline(params: Dict, ui_decisions: Dict) -> Tuple[pd.DataFrame, pd.Dat
         companies.to_csv("data/outputs/final_companies.csv", index=False)
         leads_df.to_csv("data/outputs/final_leads.csv", index=False)
         companies_no_personas.to_csv("data/outputs/final_needs_salesnav.csv", index=False)
-        # Optional: log the error for visibility in Streamlit logs
         print(f"[WARN] Failed to write XLSX with XlsxWriter: {e}. Wrote CSV fallbacks instead.")
 
     return companies, leads_df, companies_no_personas
