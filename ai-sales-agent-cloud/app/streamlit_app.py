@@ -1,3 +1,4 @@
+# app/streamlit_app.py
 import sys, os, io
 # Ensure imports work on Streamlit Cloud (add repo root to PYTHONPATH)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,7 +13,6 @@ from app.utils.sales_navigator_csv import accounts_csv
 def make_excel_bytes(companies: pd.DataFrame, leads: pd.DataFrame, needs_sn: pd.DataFrame):
     """Try to generate an XLSX in memory. Return bytes or None on failure."""
     try:
-        import io
         bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="xlsxwriter") as xl:
             companies.to_excel(xl, sheet_name="Companies", index=False)
@@ -74,7 +74,7 @@ if run:
         'titles_regex': titles_regex,
         'mini_mode': bool(mini_mode),
 
-        # NEW toggles:
+        # toggles:
         'enable_zoominfo_email_enrichment': bool(enrich_emails_zoominfo),
         'use_sales_navigator_mock': bool(include_sn_leads),
     }
@@ -88,8 +88,20 @@ if run:
 if not st.session_state.companies.empty:
     st.subheader('🏢 Companies')
     st.dataframe(st.session_state.companies, use_container_width=True)
+
     st.subheader('👥 Leads')
-    st.dataframe(st.session_state.leads, use_container_width=True)
+    # Show only the most relevant columns in the Leads table
+    preferred_cols = ["company_domain", "full_name", "title", "email", "li_profile", "source"]
+    existing_cols = [c for c in preferred_cols if c in st.session_state.leads.columns]
+    if existing_cols:
+        leads_view = st.session_state.leads[existing_cols].copy()
+        st.dataframe(leads_view, use_container_width=True)
+    else:
+        # Fallback: show whatever we have
+        st.dataframe(st.session_state.leads, use_container_width=True)
+
+    st.caption("Legend: ZoomInfo leads may include emails (if enabled). Sales Navigator leads have blank email but include a LinkedIn profile URL.")
+
     st.subheader('📋 Accounts needing Sales Navigator')
     st.dataframe(st.session_state.needs_sn, use_container_width=True)
 
@@ -135,9 +147,9 @@ if not st.session_state.companies.empty:
         sn_csv = st.session_state.needs_sn.copy()
         out = pd.DataFrame({
             'Company Name': sn_csv.get('company_name', sn_csv.get('domain', pd.Series([], dtype=str))).fillna(sn_csv.get('domain')),
-            'Company Website': 'https://' + sn_csv['domain'],
+            'Company Website': sn_csv.get('company_url', 'https://') + sn_csv.get('domain', pd.Series([], dtype=str)),
             'Company LinkedIn URL': sn_csv.get('li_company_url', pd.Series(['']*len(sn_csv))),
-            'Country': sn_csv.get('country', pd.Series(['']*len(sn_csv))),
+            'Country': sn_csv.get('hq_country', sn_csv.get('country', pd.Series(['']*len(sn_csv)))),
         })
         st.download_button(
             '📥 sn_accounts_upload.csv',
