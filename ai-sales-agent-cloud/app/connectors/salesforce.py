@@ -13,34 +13,39 @@ SN_TITLES = [
 SN_FIRST = ["Chris","Eva","Tom","Julia","Nico","Hannah","Lukas","Marie","Leo","Nina","Clara","Jonas"]
 SN_LAST  = ["Schneider","Keller","Hoffmann","Bauer","Brandt","Neumann","Kunz","Zimmer","Becker","Wagner","Fischer","Schmidt"]
 
+def _person_slug(first: str, last: str, domain: str) -> str:
+    # Create a deterministic, person-like slug so it visibly looks like a LinkedIn profile URL
+    suffix = abs(hash(f"{domain}|{first}|{last}")) % 100000
+    return f"{first.lower()}-{last.lower()}-{suffix}"
+
 def find_personas_from_account_list(company_domains: List[str], titles_regex: str) -> pd.DataFrame:
     """
     Mock Sales Navigator:
-      - Generate 0..2 leads per company
+      - Generate 1..3 leads per company
       - Filter by titles_regex (case-insensitive)
-      - Email stays blank by design; LinkedIn profile is provided
+      - Email stays blank; LinkedIn profile is a person-style URL (/in/slug/)
     """
     try:
         pattern = re.compile(titles_regex or "", re.IGNORECASE)
     except re.error:
-        # Fallback: if regex is invalid, treat as match-all
-        pattern = re.compile(".*")
+        pattern = re.compile(".*")  # match all if regex invalid
 
     rows: List[Dict] = []
     for domain in company_domains:
-        n = random.choice([0, 1, 2])
-        for _ in range(n):
+        # Generate a few leads to increase chance of regex matches
+        for _ in range(random.choice([1, 2, 3])):
             fn = random.choice(SN_FIRST)
             ln = random.choice(SN_LAST)
             title = random.choice(SN_TITLES)
             if not pattern.search(title or ""):
                 continue
+            slug = _person_slug(fn, ln, domain)
             rows.append({
                 "company_domain": domain,
                 "full_name": f"{fn} {ln}",
                 "title": title,
-                "email": "",  # keep empty for Sales Navigator
-                "li_profile": f"https://www.linkedin.com/in/{fn.lower()}{ln.lower()}",
+                "email": "",  # per requirement: keep empty for Sales Navigator
+                "li_profile": f"https://www.linkedin.com/in/{slug}/",
                 "source": "sales_navigator",
                 "confidence": 0.6
             })
