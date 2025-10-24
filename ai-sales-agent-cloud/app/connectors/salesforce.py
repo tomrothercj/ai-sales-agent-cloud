@@ -1,33 +1,23 @@
-# app/connectors/sales_navigator.py
+# app/connectors/salesforce.py
 import random
-import pandas as pd
-from typing import List, Dict
+from typing import Optional
 
-SN_TITLES = [
-    "Marketing Manager", "Senior Marketing Manager", "Sales Manager",
-    "Account Executive", "BDR", "Head of Partnerships"
-]
-SN_FIRST = ["Chris","Eva","Tom","Julia","Nico","Hannah","Lukas","Marie"]
-SN_LAST  = ["Schneider","Keller","Hoffmann","Bauer","Brandt","Neumann","Kunz","Zimmer"]
+__all__ = ["find_account_by_domain", "create_account"]
 
-def find_personas_from_account_list(company_domains: List[str]) -> pd.DataFrame:
+def find_account_by_domain(domain: str) -> Optional[str]:
     """
-    Mock Sales Navigator: return 0..2 leads per company.
-    Emails are intentionally blank; LinkedIn profile is provided.
+    Mock: ~50% of companies already exist in Salesforce.
+    Returns an Account ID string or None.
     """
-    rows: List[Dict] = []
-    for domain in company_domains:
-        n = random.choice([0, 1, 2])
-        for _ in range(n):
-            fn = random.choice(SN_FIRST)
-            ln = random.choice(SN_LAST)
-            rows.append({
-                "company_domain": domain,
-                "full_name": f"{fn} {ln}",
-                "title": random.choice(SN_TITLES),
-                "email": "",  # per requirement: keep empty for Sales Navigator
-                "li_profile": f"https://www.linkedin.com/in/{fn.lower()}{ln.lower()}",
-                "source": "sales_navigator",
-                "confidence": 0.6
-            })
-    return pd.DataFrame(rows)
+    if not isinstance(domain, str) or not domain:
+        return None
+    if random.random() < 0.5:
+        return f"001{abs(hash(domain)) % 1_000_000:06d}"
+    return None
+
+def create_account(company_name: str, domain: str) -> str:
+    """
+    Mock: create and return a new Account ID.
+    """
+    base = (domain or company_name or "new").strip().lower()
+    return f"001NEW{abs(hash(base)) % 1_000:03d}"
